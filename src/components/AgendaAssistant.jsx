@@ -3,6 +3,7 @@ import { IconChat, IconChevronDown, IconClose, IconArrowUp, IconPaperclip, IconT
 import { localAnswer, buildAgendaContext } from '../agenda/assistant'
 import { askRachel } from '../agenda/chat'
 import { extractPdfText, buildProposal } from '../agenda/pdf'
+import Markdown from './Markdown'
 
 // "Rachel": floating legal work-agenda assistant. Folds open into a chat panel.
 // Text messages go to Anthropic via the secure /api/chat route (with the current
@@ -272,8 +273,10 @@ function Bubble({ m }) {
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
         className={
-          'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[13px] leading-relaxed ' +
-          (isUser ? 'rounded-br-sm bg-[var(--accent)] text-white' : 'rounded-bl-sm border border-slate-200 bg-white text-slate-700')
+          'max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed ' +
+          (isUser
+            ? 'whitespace-pre-wrap rounded-br-sm bg-[var(--accent)] text-white'
+            : 'rounded-bl-sm border border-slate-200 bg-white text-slate-700')
         }
       >
         {m.pdfName && (
@@ -282,7 +285,8 @@ function Bubble({ m }) {
             <span className="truncate">{m.pdfName}</span>
           </div>
         )}
-        {m.text}
+        {/* User text is plain; Rachel's replies render basic Markdown. */}
+        {isUser ? m.text : <Markdown text={m.text} />}
       </div>
     </div>
   )
