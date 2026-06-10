@@ -6,6 +6,7 @@ import * as agenda from './agenda/actions'
 import ControlBar from './components/ControlBar'
 import MatterRow from './components/MatterRow'
 import Editable from './components/Editable'
+import AgendaAssistant from './components/AgendaAssistant'
 import { IconTrash, IconPlus } from './components/icons'
 
 export default function App() {
@@ -200,6 +201,9 @@ export default function App() {
         </div>
         </div>
       </div>
+
+      {/* Floating local chat assistant (reads the current agenda; never edits it) */}
+      <AgendaAssistant data={data} />
     </div>
   )
 }
