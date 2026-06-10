@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconChat, IconChevronDown, IconClose, IconArrowUp, IconPaperclip, IconTrash } from './icons'
 import { localAnswer, buildAgendaContext } from '../agenda/assistant'
-import { askRachel } from '../agenda/chat'
+import { askRachel, extractAgenda } from '../agenda/chat'
 import { extractPdfText, buildProposal } from '../agenda/pdf'
 import Markdown from './Markdown'
 
@@ -74,6 +74,16 @@ export default function AgendaAssistant({ data, onApplyExtraction }) {
     acceptPdf(e.dataTransfer.files?.[0])
   }
 
+  // Compact matter list sent to Rachel so she can match the PDF to a matter.
+  const matterList = () =>
+    matters.map((m) => ({
+      id: m.id,
+      name: m.matterName || undefined,
+      number: m.matterNumber || undefined,
+      type: m.matterType || undefined,
+      aliases: m.aliases && m.aliases.length ? m.aliases : undefined,
+    }))
+
   const send = async () => {
     const text = input.trim()
     if ((!text && !pdf) || loading) return
@@ -85,12 +95,22 @@ export default function AgendaAssistant({ data, onApplyExtraction }) {
     setLoading(true)
 
     if (file) {
-      // Read the PDF locally and build a proposal (text extraction is local;
-      // the file itself is never uploaded). Keep the text for chat follow-ups.
+      // 1) Extract text locally (the PDF file itself is never uploaded).
+      // 2) Ask Rachel (Anthropic) to analyse the TEXT into a structured proposal.
+      // 3) Fall back to the local regex extraction if Rachel is unavailable.
       try {
         const pdfText = await extractPdfText(file)
         setLastPdf({ name: file.name, text: pdfText.slice(0, 8000) })
-        const proposal = buildProposal(pdfText, file.name, matters)
+
+        let proposal
+        try {
+          const result = await extractAgenda(pdfText, matterList())
+          proposal = aiProposal(result, file.name, matters)
+        } catch (aiErr) {
+          proposal = { ...buildProposal(pdfText, file.name, matters), source: 'local', warnings: [] }
+          addMsg({ role: 'assistant', text: `Couldn’t reach Rachel’s AI to analyse “${file.name}” — used local extraction instead.` })
+        }
+
         if (!proposal.hasUpdates && proposal.dates.length === 0) {
           addMsg({ role: 'assistant', text: `I read “${file.name}” but couldn’t find any dates or actions to propose. Ask me to summarise it if you like.` })
         } else {
@@ -304,6 +324,34 @@ function TypingBubble() {
   )
 }
 
+// Map Rachel's structured JSON into the proposal shape the card/apply expect.
+function aiProposal(result, fileName, matters) {
+  const r = result || {}
+  const matched = r.matchedMatterId && matters.find((m) => m.id === r.matchedMatterId)
+  const steps = (r.proposedNextSteps || [])
+    .map((s) => (typeof s === 'string' ? { text: s, dueDate: null } : { text: s?.text || '', dueDate: s?.dueDate || null }))
+    .filter((s) => s.text.trim())
+  const dates = (r.extractedDates || [])
+    .filter((d) => d && d.date)
+    .map((d) => ({ raw: d.date, kind: d.kind || 'other', label: d.label || 'Date' }))
+  const courtDate = r.proposedCourtDateUpdate || null
+
+  return {
+    fileName,
+    source: 'rachel',
+    matchId: matched ? matched.id : null,
+    matchName: matched ? (matched.matterName || matched.matterNumber) : null,
+    confidence: matched ? (r.confidence || 'medium') : 'none',
+    reasons: r.matchReason ? [r.matchReason] : [],
+    guessedTitle: r.detectedMatterName || null,
+    courtDate,
+    steps,
+    dates,
+    warnings: Array.isArray(r.warnings) ? r.warnings.filter(Boolean) : [],
+    hasUpdates: Boolean(courtDate) || steps.length > 0,
+  }
+}
+
 // Confirmation card shown before any agenda change. Nothing is applied until
 // the user picks a matter (if unsure) and clicks Apply.
 const CONF_COLOR = { high: '#16a34a', medium: '#d97706', low: '#dc2626', none: '#dc2626' }
@@ -326,13 +374,22 @@ function ProposalCard({ proposal, matters, resolved, summary, onApply, onCancel 
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3 text-[13px] shadow-sm">
-      <div className="mb-2 flex items-center gap-1.5 text-slate-900">
+      <div className="mb-2 flex items-center justify-between gap-2 text-slate-900">
         <span className="font-semibold">Proposed update from PDF</span>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+          {proposal.source === 'local' ? 'Local extraction' : 'Analysed by Rachel'}
+        </span>
       </div>
       <div className="mb-2 flex items-center gap-1.5 text-[11px] text-slate-500">
         <IconPaperclip size={12} />
         <span className="truncate">{proposal.fileName}</span>
       </div>
+
+      {proposal.warnings && proposal.warnings.length > 0 && (
+        <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-700">
+          {proposal.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+        </div>
+      )}
 
       {/* Matter + confidence */}
       <div className="mb-1 flex items-center justify-between gap-2">

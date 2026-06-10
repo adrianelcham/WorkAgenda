@@ -57,3 +57,70 @@ export async function callAnthropic({ apiKey, model, messages, agenda }) {
     .trim()
   return { reply: reply || '(no response)' }
 }
+
+// Parse a JSON object out of a model response (tolerant of code fences / prose).
+function parseJsonLoose(s) {
+  let t = String(s || '').trim()
+  t = t.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+  const start = t.indexOf('{')
+  const end = t.lastIndexOf('}')
+  if (start >= 0 && end > start) t = t.slice(start, end + 1)
+  return JSON.parse(t)
+}
+
+// Analyse extracted PDF text + existing matters -> structured agenda proposal.
+// Only the extracted TEXT is sent (never the PDF file). Returns parsed JSON.
+export async function extractAgenda({ apiKey, model, text, matters }) {
+  const system = [
+    'You extract structured agenda updates from the text of a legal/court document.',
+    'You are given the document text and a list of EXISTING matters (id, name, number, aliases).',
+    'Identify which existing matter the document relates to (by party name, matter number or alias),',
+    'and pull out court dates and action deadlines from the text only.',
+    'Classify each date as "court" (hearing, directions, mention, pre-trial, callover, conference, listing),',
+    '"deadline" (file/serve/lodge evidence, affidavits, submissions, etc.) or "other".',
+    'Respond with ONLY a single valid JSON object (no markdown, no prose) of this exact shape:',
+    '{"detectedMatterName": string|null, "detectedMatterNumber": string|null,',
+    ' "matchedMatterId": string|null, "matchReason": string|null,',
+    ' "confidence": "high"|"medium"|"low",',
+    ' "extractedDates": [{"date": string, "label": string, "kind": "court"|"deadline"|"other"}],',
+    ' "proposedCourtDateUpdate": string|null,',
+    ' "proposedNextSteps": [{"text": string, "dueDate": string|null}],',
+    ' "warnings": [string]}.',
+    'proposedCourtDateUpdate: a short human-readable label combining the event and date',
+    'as it should appear in the agenda, e.g. "Directions hearing — 24 June 2026", or null.',
+    'proposedNextSteps[].text: a self-contained action that includes its deadline date in words,',
+    'e.g. "File evidence by 23 June 2026"; dueDate is that same date.',
+    'matchedMatterId MUST be one of the provided matter ids, or null if unsure.',
+    'Never invent dates, parties or matter numbers that are not in the document text.',
+  ].join(' ')
+
+  const userContent =
+    'EXISTING MATTERS:\n' + JSON.stringify(matters || []).slice(0, 6000) +
+    '\n\nDOCUMENT TEXT:\n' + String(text || '').slice(0, 16000)
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: model || DEFAULT_MODEL,
+      max_tokens: 1024,
+      system,
+      messages: [{ role: 'user', content: userContent }],
+    }),
+  })
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    const err = new Error('Anthropic API error ' + res.status)
+    err.detail = detail.slice(0, 500)
+    throw err
+  }
+
+  const data = await res.json()
+  const raw = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim()
+  return { result: parseJsonLoose(raw) }
+}
