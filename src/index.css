@@ -1,0 +1,73 @@
+/* Tailwind v4 — this import must come first. */
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   A few small plain-CSS helpers (kept out of Tailwind so they're easy to read).
+--------------------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------------------
+   Auto-growing textarea (CSS-only, no JS measurement).
+   A hidden ::after mirror holds a copy of the text and defines the height;
+   the textarea is overlaid in the same grid cell. This is immune to the
+   table-cell height-stretching that breaks JS scrollHeight measuring.
+--------------------------------------------------------------------------- */
+.grow-wrap {
+  display: grid;
+  width: 100%;
+}
+.grow-wrap::after {
+  content: attr(data-val) " ";
+  visibility: hidden;
+}
+.grow-wrap > textarea {
+  resize: none;
+  overflow: hidden;
+}
+.grow-wrap > textarea,
+.grow-wrap::after {
+  grid-area: 1 / 1 / 2 / 2; /* stack mirror + textarea in the same cell */
+  font: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  padding: 0 0.25rem;       /* matches the inline editor look */
+  margin: 0 -0.25rem;
+  border: 0;
+}
+
+/* Control-bar buttons */
+.btn {
+  border: 1px solid #9ca3af;
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover { background: #f3f4f6; }
+.btn-primary { background: #1f2937; color: #fff; border-color: #1f2937; }
+.btn-primary:hover { background: #111827; }
+
+/* Shown only when printing (e.g. static priority/status labels). */
+.print-only { display: none; }
+
+/* ---------------------------------------------------------------------------
+   Print / "Export PDF" styles — make the page look like the printed agenda.
+--------------------------------------------------------------------------- */
+@media print {
+  /* Hide all interactive chrome (buttons, control bar, add/delete controls). */
+  .no-print { display: none !important; }
+  .print-only { display: inline !important; }
+
+  /* Don't print the grey "click to edit" placeholders. */
+  input::placeholder,
+  textarea::placeholder { color: transparent !important; }
+
+  /* Keep header row repeating + greys/colours visible on paper. */
+  body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+}
+
+@page { size: A4 portrait; margin: 10mm; }
