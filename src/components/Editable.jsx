@@ -15,12 +15,8 @@ export default function Editable({
   placeholder = '',
   className = '',
 }) {
-  // Shared visual styling (transparent until focused, then a soft highlight).
-  const look =
-    'bg-transparent outline-none rounded-sm ' +
-    'focus:bg-yellow-50 focus:ring-1 focus:ring-blue-300 ' +
-    className
-
+  // The `.editable` class (see index.css) handles the transparent-until-focused
+  // look plus the soft focus highlight, in one place.
   if (multiline) {
     // The wrapper mirrors the text via data-val so the box grows to fit.
     return (
@@ -30,7 +26,7 @@ export default function Editable({
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
-          className={look}
+          className={'editable ' + className}
         />
       </div>
     )
@@ -47,7 +43,7 @@ export default function Editable({
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
       style={style}
-      className={'px-1 -mx-1 ' + (autoWidth ? '' : 'w-full ') + look}
+      className={'editable px-1 -mx-1 ' + (autoWidth ? '' : 'w-full ') + className}
     />
   )
 }

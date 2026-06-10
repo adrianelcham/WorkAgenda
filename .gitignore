@@ -33,3 +33,8 @@ tmp
 temp
 *.tmp
 uploads
+
+# Installed agent skills / tooling (not part of the product)
+.agents
+.claude/skills
+skills-lock.json

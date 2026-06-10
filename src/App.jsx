@@ -5,6 +5,7 @@ import { uid } from './utils'
 import ControlBar from './components/ControlBar'
 import MatterRow from './components/MatterRow'
 import Editable from './components/Editable'
+import { IconTrash, IconPlus } from './components/icons'
 
 export default function App() {
   // ---- Single source of truth for the whole page -------------------------
@@ -174,37 +175,50 @@ export default function App() {
         onPrint={() => window.print()}
       />
 
-      <div className="max-w-[1200px] mx-auto px-4 py-4">
-        {/* Document header — mirrors the top of the PDF */}
-        <header className="flex items-start justify-between gap-4 mb-3">
-          <div>
+      <div className="max-w-[1280px] mx-auto px-4 py-5">
+        {/* Document header — mirrors the top of the PDF, cleaned up */}
+        <header className="mb-4 flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
+          <div className="flex items-baseline gap-3">
             <Editable
               value={data.meta.title}
               onChange={(v) => setMeta({ title: v })}
               autoWidth
-              className="text-2xl font-extrabold tracking-wide"
+              className="text-2xl font-bold tracking-tight text-slate-900"
             />
             <Editable
               value={data.meta.month}
               onChange={(v) => setMeta({ month: v })}
               autoWidth
-              className="text-base text-gray-700"
+              className="text-base font-medium text-slate-500"
             />
           </div>
-          <div className="text-right text-sm font-semibold">
-            {data.meta.names.map((n, i) => (
-              <Editable
-                key={i}
-                value={n}
-                onChange={(v) => setMeta({ names: data.meta.names.map((x, j) => (j === i ? v : x)) })}
-                className="text-right"
-              />
-            ))}
+          <div className="flex flex-col items-end gap-1">
+            <div className="text-right text-sm font-semibold text-slate-700">
+              {data.meta.names.map((n, i) => (
+                <Editable
+                  key={i}
+                  value={n}
+                  onChange={(v) => setMeta({ names: data.meta.names.map((x, j) => (j === i ? v : x)) })}
+                  className="text-right"
+                />
+              ))}
+            </div>
+            {/* Subtle auto-save indicator */}
+            <div
+              className="no-print flex items-center gap-1.5 text-xs text-slate-400"
+              title="Changes save automatically to this browser. Use Reset to restore the original agenda."
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+              Saved locally
+            </div>
           </div>
         </header>
 
-        {/* The agenda table */}
-        <table className="w-full border-collapse border border-black text-sm">
+        {/* The agenda table. The wrapper lets the table scroll horizontally on
+            narrow screens (laptop-first; mobile just needs to be usable) while
+            the header and control bar stay put. min-width keeps columns legible. */}
+        <div className="agenda-scroll overflow-x-auto">
+        <table className="agenda-table w-full min-w-[820px] border-collapse text-sm">
           <colgroup>
             <col style={{ width: '20%' }} />
             <col style={{ width: '30%' }} />
@@ -212,11 +226,15 @@ export default function App() {
             <col style={{ width: '15%' }} />
           </colgroup>
           <thead>
-            <tr className="bg-gray-200">
-              <th className="border border-black p-2 text-left">Matter</th>
-              <th className="border border-black p-2 text-left">Previous Action</th>
-              <th className="border border-black p-2 text-left">Next Steps</th>
-              <th className="border border-black p-2 text-left">Next Court Date</th>
+            <tr className="bg-slate-100">
+              {['Matter', 'Previous Action', 'Next Steps', 'Next Court Date'].map((h) => (
+                <th
+                  key={h}
+                  className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500"
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -238,10 +256,7 @@ export default function App() {
             })}
           </tbody>
         </table>
-
-        <p className="no-print text-xs text-gray-400 mt-3">
-          Changes save automatically to this browser (localStorage). Use “Reset Demo Data” to restore the original agenda.
-        </p>
+        </div>
       </div>
     </div>
   )
@@ -253,22 +268,22 @@ function SectionGroup({ section, matters, sections, actions }) {
     <>
       {/* Section heading row — centred across all four columns, like the PDF */}
       <tr className="section-row">
-        <td colSpan={4} className="border border-black bg-gray-200 py-1">
+        <td colSpan={4} className="bg-slate-200/80 px-3 py-1.5">
           <div className="flex items-center justify-center gap-2">
-            <span className="text-gray-500 select-none">—</span>
+            <span className="select-none text-slate-400">—</span>
             <Editable
               value={section.title}
               onChange={(v) => actions.renameSection(section.id, v)}
               autoWidth
-              className="text-center font-bold uppercase tracking-wide"
+              className="text-center text-sm font-bold uppercase tracking-wider text-slate-700"
             />
-            <span className="text-gray-500 select-none">—</span>
+            <span className="select-none text-slate-400">—</span>
             <button
-              className="no-print text-gray-400 hover:text-red-600 text-xs"
+              className="icon-btn danger no-print h-5 w-5"
               title="Delete section (must be empty)"
               onClick={() => actions.deleteSection(section.id)}
             >
-              🗑
+              <IconTrash size={13} />
             </button>
           </div>
         </td>
@@ -280,12 +295,10 @@ function SectionGroup({ section, matters, sections, actions }) {
 
       {/* Add a matter directly to this section */}
       <tr className="no-print">
-        <td colSpan={4} className="border border-black p-1">
-          <button
-            className="text-xs text-blue-600 hover:underline"
-            onClick={() => actions.addMatter(section.id)}
-          >
-            + Add matter to {section.title || 'this section'}
+        <td colSpan={4} className="px-2 py-1">
+          <button className="btn-ghost" onClick={() => actions.addMatter(section.id)}>
+            <IconPlus size={14} />
+            Add matter to {section.title || 'this section'}
           </button>
         </td>
       </tr>

@@ -1,4 +1,5 @@
 import { PRIORITIES, STATUSES } from '../constants'
+import { IconSearch, IconPlus, IconPrinter, IconRefresh } from './icons'
 
 // Top control bar: search, priority/status filters, and page-level actions.
 // The whole bar is hidden when printing (no-print).
@@ -9,20 +10,29 @@ export default function ControlBar({
   onAddMatter, onAddSection, onReset, onPrint,
 }) {
   return (
-    <div className="no-print sticky top-0 z-10 bg-gray-100 border-b border-gray-300">
-      <div className="max-w-[1200px] mx-auto px-4 py-2 flex flex-wrap items-center gap-2">
-        <input
-          type="text"
-          placeholder="Search matters & tasks…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="border border-gray-400 rounded px-2 py-1 text-sm flex-1 min-w-[180px] bg-white"
-        />
+    <div className="no-print sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
+      <div className="mx-auto flex max-w-[1280px] flex-wrap items-center gap-2 px-4 py-2.5">
+        {/* Search */}
+        <div className="relative flex-1 min-w-[200px]">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <IconSearch size={16} />
+          </span>
+          <input
+            type="text"
+            placeholder="Search matters & tasks…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="control w-full"
+            style={{ paddingLeft: 34 }}
+          />
+        </div>
 
+        {/* Filters */}
         <select
           value={filterPriority}
           onChange={(e) => setFilterPriority(e.target.value)}
-          className="border border-gray-400 rounded px-2 py-1 text-sm bg-white"
+          className="control"
+          title="Filter by priority"
         >
           <option value="all">All priorities</option>
           {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -31,16 +41,23 @@ export default function ControlBar({
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
-          className="border border-gray-400 rounded px-2 py-1 text-sm bg-white"
+          className="control"
+          title="Filter by status"
         >
           <option value="all">All statuses</option>
           {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
 
-        <button onClick={onAddMatter} className="btn">+ Add Matter</button>
-        <button onClick={onAddSection} className="btn">+ Add Section</button>
-        <button onClick={onReset} className="btn">Reset Demo Data</button>
-        <button onClick={onPrint} className="btn btn-primary">Print / Export PDF</button>
+        {/* Thin divider keeps filters and actions visually separate */}
+        <span className="mx-1 hidden h-6 w-px self-center bg-slate-200 sm:block" aria-hidden />
+
+        {/* Actions */}
+        <button onClick={onAddMatter} className="btn"><IconPlus size={15} />Add Matter</button>
+        <button onClick={onAddSection} className="btn"><IconPlus size={15} />Add Section</button>
+        <button onClick={onReset} className="btn" title="Restore the original agenda data">
+          <IconRefresh size={15} />Reset
+        </button>
+        <button onClick={onPrint} className="btn btn-primary"><IconPrinter size={15} />Print / Export PDF</button>
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 import Editable from './Editable'
 import TaskList from './TaskList'
 import { PRIORITIES, STATUSES, PRIORITY_COLORS, STATUS_COLORS } from '../constants'
+import { IconChevronUp, IconChevronDown, IconDuplicate, IconTrash, IconChevronDown as Caret } from './icons'
 
 // One matter = one table row with the four agenda columns.
 export default function MatterRow({ matter, sections, actions }) {
@@ -8,48 +9,59 @@ export default function MatterRow({ matter, sections, actions }) {
   const set = (field, value) => actions.updateMatterField(m.id, field, value)
 
   return (
-    <tr className="align-top">
+    <tr className="matter-row align-top">
       {/* --- Matter: number, name, type, priority, status, row controls --- */}
-      <td className="border border-black p-2">
-        <Editable
-          value={m.matterNumber}
-          onChange={(v) => set('matterNumber', v)}
-          placeholder="Matter no."
-          autoWidth
-          className="block text-xs text-gray-500 font-mono"
-        />
-        <Editable
-          value={m.matterName}
-          onChange={(v) => set('matterName', v)}
-          placeholder="Matter name"
-          className="block font-bold"
-        />
-        <Editable
-          value={m.matterType}
-          onChange={(v) => set('matterType', v)}
-          placeholder="Matter type"
-          className="block text-xs text-gray-600 italic"
-        />
+      <td className="px-3 py-2.5">
+        <div className="flex flex-col gap-1">
+          <Editable
+            value={m.matterNumber}
+            onChange={(v) => set('matterNumber', v)}
+            placeholder="Matter no."
+            autoWidth
+            className="block text-xs text-slate-400 font-mono tracking-tight"
+          />
+          <Editable
+            value={m.matterName}
+            onChange={(v) => set('matterName', v)}
+            placeholder="Matter name"
+            className="block text-[15px] font-semibold text-slate-900 leading-tight"
+          />
+          <Editable
+            value={m.matterType}
+            onChange={(v) => set('matterType', v)}
+            placeholder="Matter type"
+            className="block text-xs text-slate-500"
+          />
+        </div>
 
-        {/* Priority + status pickers (each with a small colour dot) */}
-        <div className="flex flex-wrap gap-2 pt-1.5">
-          <Picker value={m.priority} onChange={(v) => set('priority', v)}
+        {/* Priority + status as compact pill dropdowns */}
+        <div className="flex flex-wrap gap-1.5 pt-2.5">
+          <Badge value={m.priority} onChange={(v) => set('priority', v)}
             options={PRIORITIES} colors={PRIORITY_COLORS} />
-          <Picker value={m.status} onChange={(v) => set('status', v)}
+          <Badge value={m.status} onChange={(v) => set('status', v)}
             options={STATUSES} colors={STATUS_COLORS} />
         </div>
 
         {/* Row controls — hidden when printing */}
-        <div className="no-print flex flex-wrap items-center gap-1 pt-1.5 text-gray-500">
-          <IconBtn title="Move up" onClick={() => actions.moveMatter(m.id, -1)}>↑</IconBtn>
-          <IconBtn title="Move down" onClick={() => actions.moveMatter(m.id, +1)}>↓</IconBtn>
-          <IconBtn title="Duplicate" onClick={() => actions.duplicateMatter(m.id)}>⧉</IconBtn>
-          <IconBtn title="Delete" onClick={() => actions.deleteMatter(m.id)} danger>🗑</IconBtn>
+        <div className="no-print flex flex-wrap items-center gap-0.5 pt-2.5">
+          <button className="icon-btn" title="Move up" onClick={() => actions.moveMatter(m.id, -1)}>
+            <IconChevronUp size={15} />
+          </button>
+          <button className="icon-btn" title="Move down" onClick={() => actions.moveMatter(m.id, +1)}>
+            <IconChevronDown size={15} />
+          </button>
+          <button className="icon-btn" title="Duplicate matter" onClick={() => actions.duplicateMatter(m.id)}>
+            <IconDuplicate size={14} />
+          </button>
+          <button className="icon-btn danger" title="Delete matter" onClick={() => actions.deleteMatter(m.id)}>
+            <IconTrash size={14} />
+          </button>
+          <span className="mx-1 h-4 w-px bg-slate-200" aria-hidden />
           <select
             value={m.sectionId}
             onChange={(e) => actions.moveMatterToSection(m.id, e.target.value)}
             title="Move to section"
-            className="border border-gray-300 rounded text-xs px-1 py-0.5 bg-white max-w-[120px]"
+            className="mini-select"
           >
             {sections.map((s) => (
               <option key={s.id} value={s.id}>{s.title}</option>
@@ -59,53 +71,57 @@ export default function MatterRow({ matter, sections, actions }) {
       </td>
 
       {/* --- Previous Action --- */}
-      <td className="border border-black p-2">
-        <TaskList matterId={m.id} listKey="previousActions" tasks={m.previousActions} actions={actions} />
+      <td className="px-3 py-2.5">
+        <TaskList matterId={m.id} listKey="previousActions" tasks={m.previousActions}
+          actions={actions} emptyLabel="No previous actions" />
       </td>
 
       {/* --- Next Steps --- */}
-      <td className="border border-black p-2">
-        <TaskList matterId={m.id} listKey="nextSteps" tasks={m.nextSteps} actions={actions} />
+      <td className="px-3 py-2.5">
+        <TaskList matterId={m.id} listKey="nextSteps" tasks={m.nextSteps}
+          actions={actions} emptyLabel="No next steps" />
       </td>
 
       {/* --- Next Court Date (free text, may span multiple lines) --- */}
-      <td className="border border-black p-2">
-        <Editable multiline value={m.nextCourtDate} onChange={(v) => set('nextCourtDate', v)} placeholder="—" />
+      <td className="px-3 py-2.5">
+        <Editable
+          multiline
+          value={m.nextCourtDate}
+          onChange={(v) => set('nextCourtDate', v)}
+          placeholder="No court date"
+          className="text-slate-700 text-[13px]"
+        />
       </td>
     </tr>
   )
 }
 
-// Small dropdown with a colour dot in front. On screen it's a <select>;
-// on the printout it shows as a plain coloured label (see .print-only / .no-print).
-function Picker({ value, onChange, options, colors }) {
-  const color = colors[value] || '#6b7280'
+// Priority / status as a pill-shaped dropdown: a colour dot, the value, and a
+// caret. On screen it's a real <select>; on the printout it prints as plain
+// coloured text (see .print-only / .no-print).
+function Badge({ value, onChange, options, colors }) {
+  const color = colors[value] || '#64748b'
   return (
-    <span className="inline-flex items-center gap-1">
-      <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: color }} />
+    <span className="relative inline-flex items-center">
+      <span
+        className="no-print pointer-events-none absolute left-[7px] h-1.5 w-1.5 rounded-full"
+        style={{ background: color }}
+        aria-hidden
+      />
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="no-print text-xs border border-gray-300 rounded px-1 py-0.5 bg-white"
+        className="badge-select no-print"
+        style={{ color, backgroundColor: color + '1f', borderColor: color + '40' }}
       >
         {options.map((o) => (
-          <option key={o} value={o}>{o}</option>
+          <option key={o} value={o} style={{ color: '#1e293b' }}>{o}</option>
         ))}
       </select>
-      <span className="print-only text-xs" style={{ color }}>{value}</span>
+      <span className="no-print pointer-events-none absolute right-[5px]" style={{ color }} aria-hidden>
+        <Caret size={10} strokeWidth={2.2} />
+      </span>
+      <span className="print-only text-xs font-medium" style={{ color }}>{value}</span>
     </span>
-  )
-}
-
-// Tiny icon button used in the matter row controls.
-function IconBtn({ children, title, onClick, danger }) {
-  return (
-    <button
-      title={title}
-      onClick={onClick}
-      className={'px-1 rounded hover:bg-gray-100 ' + (danger ? 'hover:text-red-600' : 'hover:text-black')}
-    >
-      {children}
-    </button>
   )
 }

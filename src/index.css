@@ -2,27 +2,55 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
-   A few small plain-CSS helpers (kept out of Tailwind so they're easy to read).
+   Design tokens. One restrained, professional palette (slate + a single blue
+   accent + semantic priority/status colours). No pure black, no gradients.
 --------------------------------------------------------------------------- */
+:root {
+  --line: #cbd5e1;          /* table rules / cell borders   (slate-300) */
+  --line-strong: #94a3b8;   /* control borders              (slate-400) */
+  --edit-bg: #eff6ff;       /* cell background while editing (blue-50)  */
+  --edit-ring: rgba(37, 99, 235, 0.35);
+  --row-hover: #f8fafc;     /* matter row hover             (slate-50)  */
+  --accent: #2563eb;        /* single accent                (blue-600)  */
+}
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  color: #1e293b;           /* charcoal, never pure black (slate-800) */
+  background: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------------------------------------------------------------------------
+   Inline editors — blend into the cell, reveal a soft highlight on focus.
+--------------------------------------------------------------------------- */
+.editable {
+  background: transparent;
+  border-radius: 4px;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.editable::placeholder { color: #94a3b8; }
+.editable:focus {
+  outline: none;
+  background: var(--edit-bg);
+  box-shadow: 0 0 0 2px var(--edit-ring);
+}
 
 /* ---------------------------------------------------------------------------
    Auto-growing textarea (CSS-only, no JS measurement).
    A hidden ::after mirror holds a copy of the text and defines the height;
-   the textarea is overlaid in the same grid cell. This is immune to the
-   table-cell height-stretching that breaks JS scrollHeight measuring.
+   the textarea is overlaid in the same grid cell. Immune to the table-cell
+   height-stretching that breaks JS scrollHeight measuring.
 --------------------------------------------------------------------------- */
-.grow-wrap {
-  display: grid;
-  width: 100%;
-}
-.grow-wrap::after {
-  content: attr(data-val) " ";
-  visibility: hidden;
-}
-.grow-wrap > textarea {
-  resize: none;
-  overflow: hidden;
-}
+.grow-wrap { display: grid; width: 100%; }
+.grow-wrap::after { content: attr(data-val) " "; visibility: hidden; }
+.grow-wrap > textarea { resize: none; overflow: hidden; }
 .grow-wrap > textarea,
 .grow-wrap::after {
   grid-area: 1 / 1 / 2 / 2; /* stack mirror + textarea in the same cell */
@@ -30,44 +58,177 @@
   line-height: inherit;
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  padding: 0 0.25rem;       /* matches the inline editor look */
+  padding: 1px 0.25rem;
   margin: 0 -0.25rem;
   border: 0;
 }
 
-/* Control-bar buttons */
+/* ---------------------------------------------------------------------------
+   The agenda table — crisp 1px rules, subtle row hover.
+--------------------------------------------------------------------------- */
+.agenda-table { border: 1px solid var(--line); }
+.agenda-table th,
+.agenda-table td { border: 1px solid var(--line); }
+
+/* Hover only on real pointers (avoids sticky tap-hover on touch devices). */
+@media (hover: hover) and (pointer: fine) {
+  .agenda-table tbody tr.matter-row:hover { background: var(--row-hover); }
+}
+
+/* ---------------------------------------------------------------------------
+   Buttons & controls.
+--------------------------------------------------------------------------- */
 .btn {
-  border: 1px solid #9ca3af;
-  background: #ffffff;
-  border-radius: 6px;
-  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  color: #334155;
+  border-radius: 7px;
   font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+  transition: background-color 130ms ease, border-color 130ms ease, transform 130ms ease;
 }
-.btn:hover { background: #f3f4f6; }
-.btn-primary { background: #1f2937; color: #fff; border-color: #1f2937; }
-.btn-primary:hover { background: #111827; }
+.btn:hover { background: #f1f5f9; }
+.btn:active { transform: scale(0.97); }
+.btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--edit-ring); }
+.btn-primary { background: #0f172a; border-color: #0f172a; color: #fff; }
+.btn-primary:hover { background: #1e293b; }
+
+/* Quiet ghost button (add task / add matter). Obvious on hover, not noisy. */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+.btn-ghost:hover { background: #eff6ff; color: var(--accent); }
+.btn-ghost:active { transform: scale(0.98); }
+
+/* Square icon buttons used for the per-row controls. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  width: 26px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+.icon-btn:hover { background: #f1f5f9; color: #1e293b; }
+.icon-btn:active { transform: scale(0.92); }
+.icon-btn:disabled { opacity: 0.35; cursor: default; }
+.icon-btn.danger:hover { background: #fef2f2; color: #dc2626; }
+
+/* Filters + search in the control bar. */
+.control {
+  height: 34px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  border-radius: 7px;
+  font-size: 0.875rem;
+  color: #1e293b;
+  padding: 0 10px;
+}
+.control:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--edit-ring);
+}
+
+/* Compact select for "move matter to section". */
+.mini-select {
+  height: 26px;
+  max-width: 140px;
+  font-size: 0.75rem;
+  color: #475569;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 6px;
+}
+.mini-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--edit-ring);
+}
+
+/* Priority / status shown as a pill-shaped dropdown (tint set inline). */
+.badge-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 3px 18px 3px 16px;
+  cursor: pointer;
+  max-width: 100%;
+}
+.badge-select:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--edit-ring); }
+
+/* Native checkbox uses the accent colour. */
+input[type="checkbox"] { accent-color: var(--accent); }
 
 /* Shown only when printing (e.g. static priority/status labels). */
 .print-only { display: none; }
 
 /* ---------------------------------------------------------------------------
-   Print / "Export PDF" styles — make the page look like the printed agenda.
+   Print / "Export PDF" — a clean printed agenda.
 --------------------------------------------------------------------------- */
 @media print {
-  /* Hide all interactive chrome (buttons, control bar, add/delete controls). */
   .no-print { display: none !important; }
   .print-only { display: inline !important; }
 
-  /* Don't print the grey "click to edit" placeholders. */
+  /* Don't print the grey "click to edit" placeholders / empty-state hints. */
   input::placeholder,
   textarea::placeholder { color: transparent !important; }
 
-  /* Keep header row repeating + greys/colours visible on paper. */
   body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  thead { display: table-header-group; }
+  thead { display: table-header-group; } /* repeat column headers each page */
   tr { page-break-inside: avoid; }
+
+  /* Darken the rules so the printed grid stays crisp on paper. */
+  .agenda-table,
+  .agenda-table th,
+  .agenda-table td { border-color: #475569 !important; }
+
+  /* No edit highlight on paper. */
+  .editable:focus { background: transparent !important; box-shadow: none !important; }
+
+  /* The horizontal-scroll wrapper / min-width is only for narrow screens — on
+     paper let the table flow to the page width so no column is clipped. */
+  .agenda-scroll { overflow: visible !important; }
+  .agenda-table { min-width: 0 !important; }
 }
 
 @page { size: A4 portrait; margin: 10mm; }
+
+/* ---------------------------------------------------------------------------
+   Respect reduced-motion preferences.
+--------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+  .btn:active,
+  .icon-btn:active,
+  .btn-ghost:active { transform: none !important; }
+}
