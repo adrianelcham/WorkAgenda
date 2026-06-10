@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconChat, IconChevronDown, IconClose, IconArrowUp, IconPaperclip, IconTrash } from './icons'
+import { IconChat, IconChevronDown, IconClose, IconArrowUp, IconPaperclip, IconTrash, IconPlus } from './icons'
 import { localAnswer, buildAgendaContext } from '../agenda/assistant'
 import { askRachel, extractAgenda } from '../agenda/chat'
 import { extractPdfText, buildProposal } from '../agenda/pdf'
@@ -213,7 +213,7 @@ export default function AgendaAssistant({ data, onApplyExtraction }) {
                 matters={matters}
                 resolved={m.resolved}
                 summary={m.summary}
-                onApply={(matterId) => applyProposal(m.id, matterId, m.proposal)}
+                onApply={(matterId, edited) => applyProposal(m.id, matterId, edited || m.proposal)}
                 onCancel={() => cancelProposal(m.id)}
               />
             ) : (
@@ -356,8 +356,15 @@ function aiProposal(result, fileName, matters) {
 // the user picks a matter (if unsure) and clicks Apply.
 const CONF_COLOR = { high: '#16a34a', medium: '#d97706', low: '#dc2626', none: '#dc2626' }
 
+const REVIEW_INPUT =
+  'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-slate-700 ' +
+  'outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25'
+
 function ProposalCard({ proposal, matters, resolved, summary, onApply, onCancel }) {
   const [selectedId, setSelectedId] = useState(proposal.matchId || '')
+  // Editable copies of the proposed updates (edit-before-apply).
+  const [courtDate, setCourtDate] = useState(proposal.courtDate || '')
+  const [steps, setSteps] = useState((proposal.steps || []).map((s) => ({ ...s })))
 
   if (resolved) {
     return (
@@ -370,85 +377,116 @@ function ProposalCard({ proposal, matters, resolved, summary, onApply, onCancel 
   const conf = proposal.confidence
   const confColor = CONF_COLOR[conf] || '#64748b'
   const unsure = conf === 'low' || conf === 'none'
-  const canApply = Boolean(selectedId) && proposal.hasUpdates
+
+  const setStepText = (i, text) => setSteps((prev) => prev.map((s, j) => (j === i ? { ...s, text } : s)))
+  const deleteStep = (i) => setSteps((prev) => prev.filter((_, j) => j !== i))
+  const addStep = () => setSteps((prev) => [...prev, { text: '', dueDate: null }])
+
+  const cleanSteps = steps.filter((s) => s.text.trim()).map((s) => ({ text: s.text.trim(), dueDate: s.dueDate || null }))
+  const cleanCourtDate = courtDate.trim()
+  const canApply = Boolean(selectedId) && (cleanCourtDate || cleanSteps.length > 0)
+
+  const handleApply = () => {
+    onApply(selectedId, { ...proposal, courtDate: cleanCourtDate || null, steps: cleanSteps })
+  }
+
+  const datesRef = (proposal.dates || [])
+    .map((d) => `${d.kind === 'court' ? 'Court' : d.kind === 'deadline' ? 'Deadline' : 'Date'} ${d.raw}`)
+    .join(' · ')
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3 text-[13px] shadow-sm">
-      <div className="mb-2 flex items-center justify-between gap-2 text-slate-900">
-        <span className="font-semibold">Proposed update from PDF</span>
+    <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-3 text-[13px] shadow-sm">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2 text-slate-900">
+        <span className="font-semibold">Review PDF update</span>
         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
           {proposal.source === 'local' ? 'Local extraction' : 'Analysed by Rachel'}
         </span>
       </div>
-      <div className="mb-2 flex items-center gap-1.5 text-[11px] text-slate-500">
-        <IconPaperclip size={12} />
-        <span className="truncate">{proposal.fileName}</span>
-      </div>
 
+      {/* Warnings */}
       {proposal.warnings && proposal.warnings.length > 0 && (
-        <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-700">
+        <section className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-700">
+          <div className="mb-0.5 font-semibold">Warnings</div>
           {proposal.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
-        </div>
+        </section>
       )}
 
-      {/* Matter + confidence */}
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-slate-500">Detected matter</span>
-        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize"
-          style={{ color: confColor, backgroundColor: confColor + '1f' }}>
-          {conf} confidence
-        </span>
-      </div>
-      <select
-        value={selectedId}
-        onChange={(e) => setSelectedId(e.target.value)}
-        className="control mb-2 h-9 w-full text-[13px]"
-      >
-        <option value="">{unsure ? 'Choose the matter…' : 'Select a matter…'}</option>
-        {matters.map((m) => (
-          <option key={m.id} value={m.id}>
-            {(m.matterName || m.matterNumber || 'Untitled') + (m.matterNumber && m.matterName ? ` · ${m.matterNumber}` : '')}
-          </option>
-        ))}
-      </select>
-      {proposal.matchName && (
-        <div className="mb-2 text-[11px] text-slate-400">
-          Best guess: {proposal.matchName}{proposal.reasons.length ? ` (${proposal.reasons.join(', ')})` : ''}
+      {/* Matter */}
+      <section className="border-t border-slate-100 pt-2.5">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="text-[11px] font-medium text-slate-500">Matter</span>
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize"
+            style={{ color: confColor, backgroundColor: confColor + '1f' }}>
+            {conf} confidence
+          </span>
         </div>
-      )}
-
-      {/* Extracted dates */}
-      {proposal.dates.length > 0 && (
-        <div className="mb-2">
-          <div className="mb-1 text-[11px] font-medium text-slate-500">Extracted dates</div>
-          <ul className="space-y-0.5">
-            {proposal.dates.map((d, i) => (
-              <li key={i} className="text-[12px] text-slate-600">
-                <span className="text-slate-400">{d.kind === 'court' ? 'Court' : d.kind === 'deadline' ? 'Deadline' : 'Date'}:</span>{' '}
-                {d.raw}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Proposed updates */}
-      <div className="mb-3 rounded-lg bg-slate-50 p-2">
-        <div className="mb-1 text-[11px] font-medium text-slate-500">Proposed updates</div>
-        {proposal.courtDate && (
-          <div className="text-[12px] text-slate-700">• Next Court Date → <span className="font-medium">{proposal.courtDate}</span></div>
+        <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="control h-9 w-full text-[13px]">
+          <option value="">{unsure ? 'Choose the matter…' : 'Select a matter…'}</option>
+          {matters.map((m) => (
+            <option key={m.id} value={m.id}>
+              {(m.matterName || m.matterNumber || 'Untitled') + (m.matterNumber && m.matterName ? ` · ${m.matterNumber}` : '')}
+            </option>
+          ))}
+        </select>
+        {proposal.matchName && (
+          <div className="mt-1 text-[11px] text-slate-400">
+            Best guess: {proposal.matchName}{proposal.reasons?.length ? ` (${proposal.reasons.join(', ')})` : ''}
+          </div>
         )}
-        {proposal.steps.map((s, i) => (
-          <div key={i} className="text-[12px] text-slate-700">• Add next step: {s.text}</div>
-        ))}
-        {!proposal.hasUpdates && <div className="text-[12px] italic text-slate-400">No concrete updates detected.</div>}
-      </div>
+        {datesRef && <div className="mt-1 text-[11px] text-slate-400">Extracted dates: {datesRef}</div>}
+      </section>
 
-      <div className="flex items-center gap-2">
-        <button className="btn btn-primary h-8" disabled={!canApply} onClick={() => onApply(selectedId)}>
-          Apply
+      {/* Court date update (editable) */}
+      <section className="border-t border-slate-100 pt-2.5">
+        <div className="mb-1 text-[11px] font-medium text-slate-500">Court date update</div>
+        <input
+          value={courtDate}
+          onChange={(e) => setCourtDate(e.target.value)}
+          placeholder="No court date — leave blank to skip"
+          className={REVIEW_INPUT}
+        />
+        <div className="mt-1 text-[10px] text-slate-400">Updates the matter’s “Next Court Date”. Leave blank to skip.</div>
+      </section>
+
+      {/* Next steps to add (editable / deletable) */}
+      <section className="border-t border-slate-100 pt-2.5">
+        <div className="mb-1 text-[11px] font-medium text-slate-500">Next steps to add</div>
+        <div className="space-y-1.5">
+          {steps.map((s, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <input
+                value={s.text}
+                onChange={(e) => setStepText(i, e.target.value)}
+                placeholder="Step text…"
+                className={REVIEW_INPUT + ' flex-1'}
+              />
+              <button className="icon-btn danger h-7 w-7 shrink-0" title="Remove step" onClick={() => deleteStep(i)}>
+                <IconTrash size={14} />
+              </button>
+            </div>
+          ))}
+          {steps.length === 0 && <div className="text-[12px] italic text-slate-400">No next steps proposed.</div>}
+        </div>
+        <button className="btn-ghost mt-1" onClick={addStep}>
+          <IconPlus size={13} /> Add step
         </button>
+      </section>
+
+      {/* Source document */}
+      <section className="border-t border-slate-100 pt-2.5">
+        <div className="mb-1 text-[11px] font-medium text-slate-500">Source document</div>
+        <div className="flex items-center gap-1.5 text-[12px] text-slate-600">
+          <IconPaperclip size={13} />
+          <span className="truncate">{proposal.fileName}</span>
+        </div>
+      </section>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 border-t border-slate-100 pt-2.5">
+        <button className="btn btn-primary h-8" disabled={!canApply} onClick={handleApply}>Apply</button>
         <button className="btn h-8" onClick={onCancel}>Cancel</button>
+        {!selectedId && <span className="text-[10px] text-slate-400">Choose a matter to apply</span>}
       </div>
     </div>
   )
