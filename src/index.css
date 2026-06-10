@@ -19,7 +19,7 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   color: #1e293b;           /* charcoal, never pure black (slate-800) */
-  background: #ffffff;
+  background: #f6f7f9;       /* soft canvas, document sits on top (slate-ish) */
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   line-height: 1.5;
@@ -64,11 +64,13 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
-   The agenda table — crisp 1px rules, subtle row hover.
+   The agenda table — light "spreadsheet" gridlines inside a rounded card
+   (the card frame is applied in App.jsx). No heavy outer border.
 --------------------------------------------------------------------------- */
-.agenda-table { border: 1px solid var(--line); }
 .agenda-table th,
-.agenda-table td { border: 1px solid var(--line); }
+.agenda-table td { border-bottom: 1px solid #eef1f5; }
+.agenda-table th:not(:last-child),
+.agenda-table td:not(:last-child) { border-right: 1px solid #f2f4f7; }
 
 /* Hover only on real pointers (avoids sticky tap-hover on touch devices). */
 @media (hover: hover) and (pointer: fine) {
@@ -82,23 +84,28 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--line-strong);
+  height: 36px;
+  padding: 0 13px;
+  border: 1px solid #d7dde5;
   background: #fff;
   color: #334155;
-  border-radius: 7px;
+  border-radius: 9px;
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 130ms ease, border-color 130ms ease, transform 130ms ease;
+  transition: background-color 130ms ease, border-color 130ms ease, transform 130ms ease, box-shadow 130ms ease;
 }
-.btn:hover { background: #f1f5f9; }
+.btn:hover { background: #f8fafc; border-color: #c4ccd6; }
 .btn:active { transform: scale(0.97); }
-.btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--edit-ring); }
-.btn-primary { background: #0f172a; border-color: #0f172a; color: #fff; }
-.btn-primary:hover { background: #1e293b; }
+.btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--edit-ring); }
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.25);
+}
+.btn-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
 
 /* Quiet ghost button (add task / add matter). Obvious on hover, not noisy. */
 .btn-ghost {
@@ -140,18 +147,20 @@ body {
 
 /* Filters + search in the control bar. */
 .control {
-  height: 34px;
-  border: 1px solid var(--line-strong);
+  height: 36px;
+  border: 1px solid #d7dde5;
   background: #fff;
-  border-radius: 7px;
+  border-radius: 9px;
   font-size: 0.875rem;
   color: #1e293b;
-  padding: 0 10px;
+  padding: 0 11px;
+  transition: border-color 130ms ease, box-shadow 130ms ease;
 }
+.control:hover { border-color: #c4ccd6; }
 .control:focus-visible {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--edit-ring);
+  box-shadow: 0 0 0 3px var(--edit-ring);
 }
 
 /* Compact select for "move matter to section". */
@@ -207,10 +216,13 @@ input[type="checkbox"] { accent-color: var(--accent); }
   thead { display: table-header-group; } /* repeat column headers each page */
   tr { page-break-inside: avoid; }
 
-  /* Darken the rules so the printed grid stays crisp on paper. */
-  .agenda-table,
+  /* Restore a full, crisp grid for the printed agenda. */
+  .agenda-table { border: 1px solid #475569 !important; }
   .agenda-table th,
-  .agenda-table td { border-color: #475569 !important; }
+  .agenda-table td { border: 1px solid #475569 !important; }
+
+  /* Flatten the on-screen card so it prints as a plain table. */
+  .agenda-card { box-shadow: none !important; border: 0 !important; border-radius: 0 !important; }
 
   /* No edit highlight on paper. */
   .editable:focus { background: transparent !important; box-shadow: none !important; }

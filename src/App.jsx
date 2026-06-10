@@ -10,8 +10,9 @@ import { IconTrash, IconPlus } from './components/icons'
 export default function App() {
   // ---- Single source of truth for the whole page -------------------------
   // data = { meta, sections, matters }  (see seedData.js for the shape).
-  // On first load we read from localStorage, falling back to the PDF data.
-  const [data, setData] = useState(() => loadData() || makeSeedData())
+  // On first load we read from localStorage, falling back to the PDF data,
+  // then normalise it for the current workflow (see normalize() below).
+  const [data, setData] = useState(() => normalize(loadData() || makeSeedData()))
 
   // Auto-save: whenever `data` changes, write it back to localStorage.
   useEffect(() => { saveData(data) }, [data])
@@ -48,11 +49,18 @@ export default function App() {
         [listKey]: m[listKey].map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
       })),
 
-    toggleTask: (id, listKey, taskId) =>
-      updateMatter(id, (m) => ({
-        ...m,
-        [listKey]: m[listKey].map((t) => (t.id === taskId ? { ...t, done: !t.done } : t)),
-      })),
+    // Ticking a Next Step instantly moves it to Previous Action (history).
+    // No confirmation; the item keeps its id/text and is marked done.
+    completeNextStep: (id, taskId) =>
+      updateMatter(id, (m) => {
+        const task = m.nextSteps.find((t) => t.id === taskId)
+        if (!task) return m
+        return {
+          ...m,
+          nextSteps: m.nextSteps.filter((t) => t.id !== taskId),
+          previousActions: [...m.previousActions, { ...task, done: true }],
+        }
+      }),
 
     deleteTask: (id, listKey, taskId) =>
       updateMatter(id, (m) => ({ ...m, [listKey]: m[listKey].filter((t) => t.id !== taskId) })),
@@ -164,7 +172,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-black">
+    <div className="min-h-screen">
       <ControlBar
         search={search} setSearch={setSearch}
         filterPriority={filterPriority} setFilterPriority={setFilterPriority}
@@ -214,9 +222,11 @@ export default function App() {
           </div>
         </header>
 
-        {/* The agenda table. The wrapper lets the table scroll horizontally on
-            narrow screens (laptop-first; mobile just needs to be usable) while
-            the header and control bar stay put. min-width keeps columns legible. */}
+        {/* The agenda table sits in a soft white "document" card. The inner
+            wrapper lets the table scroll horizontally on narrow screens
+            (laptop-first; mobile just needs to be usable) while the header and
+            control bar stay put. min-width keeps columns legible. */}
+        <div className="agenda-card overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="agenda-scroll overflow-x-auto">
         <table className="agenda-table w-full min-w-[820px] border-collapse text-sm">
           <colgroup>
@@ -226,11 +236,11 @@ export default function App() {
             <col style={{ width: '15%' }} />
           </colgroup>
           <thead>
-            <tr className="bg-slate-100">
+            <tr className="bg-slate-50">
               {['Matter', 'Previous Action', 'Next Steps', 'Next Court Date'].map((h) => (
                 <th
                   key={h}
-                  className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500"
+                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500"
                 >
                   {h}
                 </th>
@@ -257,6 +267,7 @@ export default function App() {
           </tbody>
         </table>
         </div>
+        </div>
       </div>
     </div>
   )
@@ -266,18 +277,17 @@ export default function App() {
 function SectionGroup({ section, matters, sections, actions }) {
   return (
     <>
-      {/* Section heading row — centred across all four columns, like the PDF */}
+      {/* Section heading row — a clean left-aligned label band */}
       <tr className="section-row">
-        <td colSpan={4} className="bg-slate-200/80 px-3 py-1.5">
-          <div className="flex items-center justify-center gap-2">
-            <span className="select-none text-slate-400">—</span>
+        <td colSpan={4} className="bg-slate-50 px-4 py-2">
+          <div className="flex items-center gap-2">
+            <span className="h-3.5 w-1 rounded-full bg-slate-300" aria-hidden />
             <Editable
               value={section.title}
               onChange={(v) => actions.renameSection(section.id, v)}
               autoWidth
-              className="text-center text-sm font-bold uppercase tracking-wider text-slate-700"
+              className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600"
             />
-            <span className="select-none text-slate-400">—</span>
             <button
               className="icon-btn danger no-print h-5 w-5"
               title="Delete section (must be empty)"
@@ -304,6 +314,30 @@ function SectionGroup({ section, matters, sections, actions }) {
       </tr>
     </>
   )
+}
+
+// Normalise data for the current workflow (runs once on load, idempotent):
+// Next Steps is now a live checklist and Previous Action is a done/history list.
+// So any *completed* Next Step from older saved data is moved into Previous
+// Action. Open Next Steps stay put. Safe for the seed data (nothing is done).
+function normalize(data) {
+  if (!data || !Array.isArray(data.matters)) return data
+  return {
+    ...data,
+    matters: data.matters.map((m) => {
+      const steps = m.nextSteps || []
+      const done = steps.filter((t) => t.done)
+      const open = steps.filter((t) => !t.done)
+      return {
+        ...m,
+        previousActions: [
+          ...(m.previousActions || []),
+          ...done.map((t) => ({ ...t, done: true })),
+        ],
+        nextSteps: open.map((t) => ({ ...t, done: false })),
+      }
+    }),
+  }
 }
 
 // Factory for a new, empty matter (used by the Add Matter buttons).

@@ -10,11 +10,11 @@ export default function ControlBar({
   onAddMatter, onAddSection, onReset, onPrint,
 }) {
   return (
-    <div className="no-print sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
+    <div className="no-print sticky top-0 z-10 border-b border-slate-200 bg-white/95 shadow-[0_1px_3px_rgba(15,23,42,0.06)] backdrop-blur">
       <div className="mx-auto flex max-w-[1280px] flex-wrap items-center gap-2 px-4 py-2.5">
         {/* Search */}
         <div className="relative flex-1 min-w-[200px]">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+          <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
             <IconSearch size={16} />
           </span>
           <input
@@ -22,8 +22,8 @@ export default function ControlBar({
             placeholder="Search matters & tasks…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="control w-full"
-            style={{ paddingLeft: 34 }}
+            className="control w-full !rounded-full"
+            style={{ paddingLeft: 38 }}
           />
         </div>
 

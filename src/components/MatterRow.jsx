@@ -11,7 +11,7 @@ export default function MatterRow({ matter, sections, actions }) {
   return (
     <tr className="matter-row align-top">
       {/* --- Matter: number, name, type, priority, status, row controls --- */}
-      <td className="px-3 py-2.5">
+      <td className="px-4 py-3">
         <div className="flex flex-col gap-1">
           <Editable
             value={m.matterNumber}
@@ -70,16 +70,16 @@ export default function MatterRow({ matter, sections, actions }) {
         </div>
       </td>
 
-      {/* --- Previous Action --- */}
-      <td className="px-3 py-2.5">
+      {/* --- Previous Action (done/history, no checkboxes) --- */}
+      <td className="px-4 py-3">
         <TaskList matterId={m.id} listKey="previousActions" tasks={m.previousActions}
-          actions={actions} emptyLabel="No previous actions" />
+          actions={actions} emptyLabel="No previous actions" variant="history" />
       </td>
 
-      {/* --- Next Steps --- */}
-      <td className="px-3 py-2.5">
+      {/* --- Next Steps (live checklist; ticking moves to Previous Action) --- */}
+      <td className="px-4 py-3">
         <TaskList matterId={m.id} listKey="nextSteps" tasks={m.nextSteps}
-          actions={actions} emptyLabel="No next steps" />
+          actions={actions} emptyLabel="No next steps" variant="steps" />
       </td>
 
       {/* --- Next Court Date (free text, may span multiple lines) --- */}

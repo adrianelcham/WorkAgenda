@@ -86,3 +86,9 @@ export const IconClose = (p) => (
     <line x1="6" y1="6" x2="18" y2="18" />
   </Svg>
 )
+
+export const IconCheck = (p) => (
+  <Svg {...p}>
+    <polyline points="20 6 9 17 4 12" />
+  </Svg>
+)
