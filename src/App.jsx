@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { makeSeedData } from './seedData'
 import { loadData, saveData } from './storage'
-import { uid } from './utils'
+import { normalizeData } from './agenda/model'
+import * as agenda from './agenda/actions'
 import ControlBar from './components/ControlBar'
 import MatterRow from './components/MatterRow'
 import Editable from './components/Editable'
@@ -9,10 +10,11 @@ import { IconTrash, IconPlus } from './components/icons'
 
 export default function App() {
   // ---- Single source of truth for the whole page -------------------------
-  // data = { meta, sections, matters }  (see seedData.js for the shape).
-  // On first load we read from localStorage, falling back to the PDF data,
-  // then normalise it for the current workflow (see normalize() below).
-  const [data, setData] = useState(() => normalize(loadData() || makeSeedData()))
+  // data = { meta, sections, matters }. On first load we read from localStorage
+  // (falling back to the seed), then normalise it (see agenda/model.js).
+  // All the actual agenda logic lives in agenda/actions.js — the handlers below
+  // are thin wrappers that feed the current data through those pure functions.
+  const [data, setData] = useState(() => normalizeData(loadData() || makeSeedData()))
 
   // Auto-save: whenever `data` changes, write it back to localStorage.
   useEffect(() => { saveData(data) }, [data])
@@ -22,122 +24,51 @@ export default function App() {
   const [filterPriority, setFilterPriority] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
 
-  // ---- Generic helpers ----------------------------------------------------
-  // Keep each item's `order` field in sync with its array position.
-  const reindex = (arr) => arr.map((item, i) => ({ ...item, order: i }))
-
-  // Update one matter (by id) using an updater function.
-  const updateMatter = (id, updater) =>
-    setData((d) => ({ ...d, matters: d.matters.map((m) => (m.id === id ? updater(m) : m)) }))
-
   // Update the page meta (title / month / names).
-  const setMeta = (patch) => setData((d) => ({ ...d, meta: { ...d.meta, ...patch } }))
+  const setMeta = (patch) => setData((d) => agenda.setMeta(d, patch))
 
-  // ---- All the editing actions, passed down to the rows -------------------
+  // ---- Editing actions passed down to the rows ----------------------------
+  // Side effects that belong to the UI (confirm/alert) stay here; the data
+  // transformation is delegated to the pure functions in agenda/actions.js.
   const actions = {
-    // Matter fields (number, name, type, priority, status, court date, notes).
-    updateMatterField: (id, field, value) =>
-      updateMatter(id, (m) => ({ ...m, [field]: value })),
+    updateMatterField: (id, field, value) => setData((d) => agenda.updateMatterField(d, id, field, value)),
 
-    // Tasks live in m.previousActions or m.nextSteps (listKey picks which).
-    addTask: (id, listKey) =>
-      updateMatter(id, (m) => ({ ...m, [listKey]: [...m[listKey], { id: uid('t'), text: '', done: false }] })),
+    addTask: (id, listKey) => setData((d) => agenda.addTask(d, id, listKey)),
+    updateTask: (id, listKey, taskId, patch) => setData((d) => agenda.updateTask(d, id, listKey, taskId, patch)),
+    deleteTask: (id, listKey, taskId) => setData((d) => agenda.deleteTask(d, id, listKey, taskId)),
 
-    updateTask: (id, listKey, taskId, patch) =>
-      updateMatter(id, (m) => ({
-        ...m,
-        [listKey]: m[listKey].map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
-      })),
+    // Ticking a Next Step instantly moves it to Previous Action (no confirm).
+    completeNextStep: (id, taskId) => setData((d) => agenda.completeNextStep(d, id, taskId)),
 
-    // Ticking a Next Step instantly moves it to Previous Action (history).
-    // No confirmation; the item keeps its id/text and is marked done.
-    completeNextStep: (id, taskId) =>
-      updateMatter(id, (m) => {
-        const task = m.nextSteps.find((t) => t.id === taskId)
-        if (!task) return m
-        return {
-          ...m,
-          nextSteps: m.nextSteps.filter((t) => t.id !== taskId),
-          previousActions: [...m.previousActions, { ...task, done: true }],
-        }
-      }),
-
-    deleteTask: (id, listKey, taskId) =>
-      updateMatter(id, (m) => ({ ...m, [listKey]: m[listKey].filter((t) => t.id !== taskId) })),
-
-    // ---- Matter row functions --------------------------------------------
-    addMatter: (sectionId) =>
-      setData((d) => ({ ...d, matters: reindex([...d.matters, blankMatter(sectionId)]) })),
+    addMatter: (sectionId) => setData((d) => agenda.addMatter(d, sectionId)),
 
     deleteMatter: (id) => {
       if (!confirm('Delete this matter?')) return
-      setData((d) => ({ ...d, matters: reindex(d.matters.filter((m) => m.id !== id)) }))
+      setData((d) => agenda.deleteMatter(d, id))
     },
 
-    duplicateMatter: (id) =>
-      setData((d) => {
-        const idx = d.matters.findIndex((m) => m.id === id)
-        if (idx < 0) return d
-        const src = d.matters[idx]
-        const copy = {
-          ...src,
-          id: uid('m'),
-          matterName: src.matterName ? src.matterName + ' (copy)' : '',
-          // Give the copied tasks fresh ids so they edit independently.
-          previousActions: src.previousActions.map((t) => ({ ...t, id: uid('t') })),
-          nextSteps: src.nextSteps.map((t) => ({ ...t, id: uid('t') })),
-        }
-        const matters = [...d.matters]
-        matters.splice(idx + 1, 0, copy)
-        return { ...d, matters: reindex(matters) }
-      }),
+    duplicateMatter: (id) => setData((d) => agenda.duplicateMatter(d, id)),
+    moveMatter: (id, dir) => setData((d) => agenda.moveMatter(d, id, dir)),
+    moveMatterToSection: (id, sectionId) => setData((d) => agenda.moveMatterToSection(d, id, sectionId)),
 
-    // Move a matter up/down among the matters that share its section.
-    moveMatter: (id, dir) =>
-      setData((d) => {
-        const matters = [...d.matters]
-        const idx = matters.findIndex((m) => m.id === id)
-        if (idx < 0) return d
-        const sec = matters[idx].sectionId
-        let swap = -1
-        if (dir < 0) {
-          for (let i = idx - 1; i >= 0; i--) if (matters[i].sectionId === sec) { swap = i; break }
-        } else {
-          for (let i = idx + 1; i < matters.length; i++) if (matters[i].sectionId === sec) { swap = i; break }
-        }
-        if (swap < 0) return d
-        ;[matters[idx], matters[swap]] = [matters[swap], matters[idx]]
-        return { ...d, matters: reindex(matters) }
-      }),
-
-    moveMatterToSection: (id, sectionId) =>
-      updateMatter(id, (m) => ({ ...m, sectionId })),
-
-    // ---- Section functions -----------------------------------------------
-    addSection: () =>
-      setData((d) => ({
-        ...d,
-        sections: reindex([...d.sections, { id: uid('s'), title: 'NEW SECTION', order: d.sections.length }]),
-      })),
-
-    renameSection: (id, title) =>
-      setData((d) => ({ ...d, sections: d.sections.map((s) => (s.id === id ? { ...s, title } : s)) })),
+    addSection: () => setData((d) => agenda.addSection(d)),
+    renameSection: (id, title) => setData((d) => agenda.renameSection(d, id, title)),
 
     deleteSection: (id) =>
       setData((d) => {
-        if (d.matters.some((m) => m.sectionId === id)) {
+        if (!agenda.sectionIsEmpty(d, id)) {
           alert('Move or delete the matters in this section first — a section can only be deleted when empty.')
           return d
         }
         if (!confirm('Delete this empty section?')) return d
-        return { ...d, sections: reindex(d.sections.filter((s) => s.id !== id)) }
+        return agenda.removeSection(d, id)
       }),
   }
 
-  // ---- Reset everything back to the original PDF data ---------------------
+  // ---- Reset everything back to the original agenda data ------------------
   const resetDemoData = () => {
     if (!confirm('Reset everything back to the original agenda data? This wipes your changes.')) return
-    setData(makeSeedData())
+    setData(normalizeData(makeSeedData()))
     setSearch(''); setFilterPriority('all'); setFilterStatus('all')
   }
 
@@ -314,46 +245,4 @@ function SectionGroup({ section, matters, sections, actions }) {
       </tr>
     </>
   )
-}
-
-// Normalise data for the current workflow (runs once on load, idempotent):
-// Next Steps is now a live checklist and Previous Action is a done/history list.
-// So any *completed* Next Step from older saved data is moved into Previous
-// Action. Open Next Steps stay put. Safe for the seed data (nothing is done).
-function normalize(data) {
-  if (!data || !Array.isArray(data.matters)) return data
-  return {
-    ...data,
-    matters: data.matters.map((m) => {
-      const steps = m.nextSteps || []
-      const done = steps.filter((t) => t.done)
-      const open = steps.filter((t) => !t.done)
-      return {
-        ...m,
-        previousActions: [
-          ...(m.previousActions || []),
-          ...done.map((t) => ({ ...t, done: true })),
-        ],
-        nextSteps: open.map((t) => ({ ...t, done: false })),
-      }
-    }),
-  }
-}
-
-// Factory for a new, empty matter (used by the Add Matter buttons).
-function blankMatter(sectionId) {
-  return {
-    id: uid('m'),
-    sectionId,
-    matterNumber: '',
-    matterName: '',
-    matterType: '',
-    priority: 'Medium',
-    status: 'Not Started',
-    previousActions: [],
-    nextSteps: [],
-    nextCourtDate: '',
-    notes: '',
-    order: 0,
-  }
 }
