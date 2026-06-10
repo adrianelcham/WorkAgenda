@@ -5,6 +5,28 @@
 const nameOf = (m) => m.matterName || m.matterNumber || 'Untitled matter'
 const oneLine = (s) => (s || '').replace(/\s*\n\s*/g, '; ').trim()
 
+// Compact agenda context sent to Anthropic so Rachel can answer about matters,
+// priorities, waiting items and dates. `extras` can carry e.g. the last
+// extracted PDF text for follow-up questions.
+export function buildAgendaContext(data, extras = {}) {
+  const sectionTitle = (id) => (data?.sections?.find((s) => s.id === id)?.title) || ''
+  return {
+    month: data?.meta?.month,
+    matters: (data?.matters || []).map((m) => ({
+      section: sectionTitle(m.sectionId),
+      number: m.matterNumber || undefined,
+      name: m.matterName || undefined,
+      type: m.matterType || undefined,
+      priority: m.priority,
+      status: m.status,
+      nextCourtDate: m.nextCourtDate || undefined,
+      previousActions: m.previousActions.map((t) => t.text).filter(Boolean),
+      nextSteps: m.nextSteps.map((t) => t.text).filter(Boolean),
+    })),
+    ...extras,
+  }
+}
+
 function summariseMatter(m) {
   const lines = [
     `${nameOf(m)}${m.matterType ? ' — ' + m.matterType : ''}`,

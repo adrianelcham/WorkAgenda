@@ -13,6 +13,40 @@ in `localStorage`.
 - [Vite](https://vitejs.dev/) + [React](https://react.dev/)
 - [Tailwind CSS v4](https://tailwindcss.com/) (via the official Vite plugin)
 - `localStorage` for persistence
+- [pdf.js](https://mozilla.github.io/pdf.js/) for local PDF text extraction (lazy-loaded)
+- **Rachel**, an AI assistant powered by the [Anthropic API](https://docs.anthropic.com/) via a small server route
+
+## Rachel (AI assistant)
+
+**Rachel** is the floating assistant (bottom-right). Type a question and it goes
+to Anthropic through a secure server route, **with your current agenda as
+context**, so she can answer about matters, priorities, waiting items and court
+dates. Drop a PDF and she extracts the text **locally** and proposes agenda
+updates you confirm with **Apply / Cancel** (nothing is applied silently).
+
+### Set your API key
+
+The key is read **only on the server** (the `api/chat` route and the Vite dev
+middleware) and is never bundled into the browser.
+
+1. Copy `.env.example` to `.env`.
+2. Set `ANTHROPIC_API_KEY=...` (optionally `ANTHROPIC_MODEL`, defaults to `claude-sonnet-4-6`).
+3. `npm run dev` — chat now uses Anthropic. On Vercel, set `ANTHROPIC_API_KEY`
+   in the project's Environment Variables (the `api/chat.js` function picks it up).
+
+If the key or route is unavailable, Rachel automatically **falls back to local
+answers** (urgent / waiting / court-date / summarise) so the app keeps working.
+
+> **Note on Netlify:** the route is a Vercel-style function in `api/`. On
+> Netlify you'd add an equivalent function and redirect `/api/chat` to it.
+
+### Privacy
+
+When you use Rachel, your **chat messages, the current agenda data, and any text
+extracted from a dropped PDF** may be sent to Anthropic to generate a response.
+Uploaded PDFs are **not stored** — only their extracted text is read in the
+browser and kept in memory for the current chat (cleared on "Clear chat"). If
+you don't set an API key, nothing is sent anywhere (local mode only).
 
 ## What it does
 

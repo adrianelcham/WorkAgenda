@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconChat, IconChevronDown, IconClose, IconArrowUp, IconPaperclip, IconTrash } from './icons'
-import { localAnswer } from '../agenda/assistant'
+import { localAnswer, buildAgendaContext } from '../agenda/assistant'
+import { askRachel } from '../agenda/chat'
 import { extractPdfText, buildProposal } from '../agenda/pdf'
 
-// Floating "Agenda Assistant": folds open into a modern chat panel.
-// Local only — no API. Text questions are answered from the current agenda;
-// dropping a PDF extracts its text in the browser and proposes agenda updates
-// in a confirmation card (Apply / Cancel). Nothing changes without confirmation.
+// "Rachel": floating legal work-agenda assistant. Folds open into a chat panel.
+// Text messages go to Anthropic via the secure /api/chat route (with the current
+// agenda as context); if that's unavailable it falls back to a local answer.
+// Dropping a PDF extracts its text in the browser and proposes agenda updates in
+// a confirmation card (Apply / Cancel) — nothing changes without confirmation.
 
 const GREETING = {
   role: 'assistant',
   text:
-    "Hi — I'm your Agenda Assistant. Ask me about urgent matters, waiting matters, " +
-    'upcoming court dates, or “summarise <matter name>”. Drop a PDF and I’ll read it ' +
-    'locally and propose updates for you to confirm.',
+    "Hi, I'm Rachel — your legal work agenda assistant. Ask me about your matters, " +
+    'priorities, what’s waiting, or upcoming court dates. Drop a PDF and I’ll read it ' +
+    'locally and propose agenda updates for you to confirm.',
 }
 
 let seq = 0
@@ -26,6 +28,7 @@ export default function AgendaAssistant({ data, onApplyExtraction }) {
   const [messages, setMessages] = useState([{ id: mid(), ...GREETING }])
   const [input, setInput] = useState('')
   const [pdf, setPdf] = useState(null) // a File | null
+  const [lastPdf, setLastPdf] = useState(null) // { name, text } of the last extracted PDF (chat context only)
   const [loading, setLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
 
@@ -81,12 +84,14 @@ export default function AgendaAssistant({ data, onApplyExtraction }) {
     setLoading(true)
 
     if (file) {
-      // Read the PDF locally and build a proposal (no API, no upload).
+      // Read the PDF locally and build a proposal (text extraction is local;
+      // the file itself is never uploaded). Keep the text for chat follow-ups.
       try {
         const pdfText = await extractPdfText(file)
+        setLastPdf({ name: file.name, text: pdfText.slice(0, 8000) })
         const proposal = buildProposal(pdfText, file.name, matters)
         if (!proposal.hasUpdates && proposal.dates.length === 0) {
-          addMsg({ role: 'assistant', text: `I read “${file.name}” but couldn’t find any dates or actions to propose.` })
+          addMsg({ role: 'assistant', text: `I read “${file.name}” but couldn’t find any dates or actions to propose. Ask me to summarise it if you like.` })
         } else {
           addMsg({ role: 'assistant', kind: 'proposal', proposal })
         }
@@ -100,12 +105,24 @@ export default function AgendaAssistant({ data, onApplyExtraction }) {
       return
     }
 
-    // Text question → local answer (small fake delay so loading shows).
-    const reply = localAnswer(text, data)
-    window.setTimeout(() => {
+    // Text message → ask Rachel (Anthropic) with the agenda as context.
+    // Build the conversation from prior visible messages + this one.
+    const convo = messages
+      .filter((m) => m.kind !== 'proposal' && m.text)
+      .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
+    convo.push({ role: 'user', content: text })
+    while (convo.length && convo[0].role !== 'user') convo.shift()
+
+    const agenda = buildAgendaContext(data, lastPdf ? { lastExtractedPdf: lastPdf } : {})
+
+    try {
+      const reply = await askRachel(convo.slice(-12), agenda)
       addMsg({ role: 'assistant', text: reply })
-      setLoading(false)
-    }, 450)
+    } catch (err) {
+      // Local fallback if the API key/route is unavailable.
+      addMsg({ role: 'assistant', text: localAnswer(text, data) + '\n\n(Local mode — Rachel’s AI service is unavailable.)' })
+    }
+    setLoading(false)
   }
 
   const applyProposal = (messageId, matterId, proposal) => {
@@ -122,6 +139,7 @@ export default function AgendaAssistant({ data, onApplyExtraction }) {
     setMessages([{ id: mid(), ...GREETING }])
     setInput('')
     setPdf(null)
+    setLastPdf(null)
     setLoading(false)
     requestAnimationFrame(adjust)
   }
@@ -132,8 +150,8 @@ export default function AgendaAssistant({ data, onApplyExtraction }) {
     <div className="no-print">
       <button
         onClick={() => setOpen((o) => !o)}
-        title={open ? 'Minimise assistant' : 'Open Agenda Assistant'}
-        aria-label={open ? 'Minimise Agenda Assistant' : 'Open Agenda Assistant'}
+        title={open ? 'Minimise Rachel' : 'Chat with Rachel'}
+        aria-label={open ? 'Minimise Rachel' : 'Open Rachel'}
         className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-lg transition hover:bg-[#1d4ed8] active:scale-95"
       >
         {open ? <IconChevronDown size={24} /> : <IconChat size={24} />}
@@ -151,8 +169,8 @@ export default function AgendaAssistant({ data, onApplyExtraction }) {
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div>
-            <div className="text-sm font-semibold text-slate-900">Agenda Assistant</div>
-            <div className="text-[11px] text-slate-400">Local · reads your agenda · proposes PDF updates</div>
+            <div className="text-sm font-semibold text-slate-900">Rachel</div>
+            <div className="text-[11px] text-slate-400">Legal work agenda assistant</div>
           </div>
           <div className="flex items-center gap-1">
             <button className="btn-ghost h-7 px-2 text-xs" onClick={clearChat} title="Clear chat">
@@ -240,7 +258,7 @@ export default function AgendaAssistant({ data, onApplyExtraction }) {
           </div>
 
           <div className="mt-1.5 px-1 text-[10px] text-slate-400">
-            Enter to send · Shift+Enter for a new line · PDFs are read locally, nothing is uploaded
+            Enter to send · Messages &amp; agenda context go to Anthropic · PDFs are read locally
           </div>
         </div>
       </div>
