@@ -1,27 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconChat, IconChevronDown, IconClose, IconArrowUp, IconPaperclip, IconTrash } from './icons'
 import { localAnswer } from '../agenda/assistant'
+import { extractPdfText, buildProposal } from '../agenda/pdf'
 
-// Floating "Agenda Assistant": a small icon button that folds open into a
-// modern chat panel. Local only — fake responses, no API, no real PDF parsing.
-// Design inspired by 21st.dev's prompt box (rounded input, auto-resize, send +
-// paperclip), rebuilt in plain JSX with the app's own icons (no new deps).
+// Floating "Agenda Assistant": folds open into a modern chat panel.
+// Local only — no API. Text questions are answered from the current agenda;
+// dropping a PDF extracts its text in the browser and proposes agenda updates
+// in a confirmation card (Apply / Cancel). Nothing changes without confirmation.
 
 const GREETING = {
   role: 'assistant',
   text:
     "Hi — I'm your Agenda Assistant. Ask me about urgent matters, waiting matters, " +
-    'upcoming court dates, or say “summarise <matter name>”. You can also drop a PDF here.',
+    'upcoming court dates, or “summarise <matter name>”. Drop a PDF and I’ll read it ' +
+    'locally and propose updates for you to confirm.',
 }
 
 let seq = 0
 const mid = () => `am_${++seq}`
 
-export default function AgendaAssistant({ data }) {
+export default function AgendaAssistant({ data, onApplyExtraction }) {
+  const matters = (data && data.matters) || []
+
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState([{ id: mid(), ...GREETING }])
   const [input, setInput] = useState('')
-  const [pdf, setPdf] = useState(null) // { name } | null
+  const [pdf, setPdf] = useState(null) // a File | null
   const [loading, setLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
 
@@ -30,12 +34,10 @@ export default function AgendaAssistant({ data }) {
   const fileRef = useRef(null)
   const dragDepth = useRef(0)
 
-  // Keep the latest message in view.
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, loading, open])
 
-  // Auto-resize the textarea (capped). Works fine outside a table cell.
   const adjust = () => {
     const el = taRef.current
     if (!el) return
@@ -44,6 +46,8 @@ export default function AgendaAssistant({ data }) {
   }
 
   const addMsg = (m) => setMessages((prev) => [...prev, { id: mid(), ...m }])
+  const updateMsg = (id, patch) =>
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)))
 
   const acceptPdf = (file) => {
     if (!file) return
@@ -52,7 +56,7 @@ export default function AgendaAssistant({ data }) {
       addMsg({ role: 'assistant', text: 'Only PDF files are supported for now.' })
       return
     }
-    setPdf({ name: file.name })
+    setPdf(file)
   }
 
   // --- drag & drop (PDF only) ---
@@ -66,26 +70,53 @@ export default function AgendaAssistant({ data }) {
     acceptPdf(e.dataTransfer.files?.[0])
   }
 
-  const send = () => {
+  const send = async () => {
     const text = input.trim()
     if ((!text && !pdf) || loading) return
-    const attached = pdf
-    addMsg({ role: 'user', text, pdfName: attached?.name })
+    const file = pdf
+    addMsg({ role: 'user', text, pdfName: file?.name })
     setInput('')
     setPdf(null)
     requestAnimationFrame(adjust)
     setLoading(true)
 
-    const reply = attached
-      ? 'PDF received. Real date extraction will be added in the next stage.'
-      : localAnswer(text, data)
+    if (file) {
+      // Read the PDF locally and build a proposal (no API, no upload).
+      try {
+        const pdfText = await extractPdfText(file)
+        const proposal = buildProposal(pdfText, file.name, matters)
+        if (!proposal.hasUpdates && proposal.dates.length === 0) {
+          addMsg({ role: 'assistant', text: `I read “${file.name}” but couldn’t find any dates or actions to propose.` })
+        } else {
+          addMsg({ role: 'assistant', kind: 'proposal', proposal })
+        }
+      } catch (err) {
+        addMsg({
+          role: 'assistant',
+          text: `I couldn’t read text from “${file.name}”. It may be a scanned/image-only PDF.`,
+        })
+      }
+      setLoading(false)
+      return
+    }
 
-    // Fake "thinking" delay so the loading state is visible.
+    // Text question → local answer (small fake delay so loading shows).
+    const reply = localAnswer(text, data)
     window.setTimeout(() => {
       addMsg({ role: 'assistant', text: reply })
       setLoading(false)
-    }, 550)
+    }, 450)
   }
+
+  const applyProposal = (messageId, matterId, proposal) => {
+    onApplyExtraction?.(matterId, proposal)
+    const name = matters.find((m) => m.id === matterId)?.matterName || 'matter'
+    const parts = []
+    if (proposal.courtDate) parts.push('court date updated')
+    if (proposal.steps.length) parts.push(`${proposal.steps.length} next step${proposal.steps.length > 1 ? 's' : ''} added`)
+    updateMsg(messageId, { resolved: 'applied', summary: `Applied to ${name}${parts.length ? ' — ' + parts.join(', ') : ''}.` })
+  }
+  const cancelProposal = (messageId) => updateMsg(messageId, { resolved: 'cancelled', summary: 'Proposal discarded.' })
 
   const clearChat = () => {
     setMessages([{ id: mid(), ...GREETING }])
@@ -99,7 +130,6 @@ export default function AgendaAssistant({ data }) {
 
   return (
     <div className="no-print">
-      {/* Floating toggle button */}
       <button
         onClick={() => setOpen((o) => !o)}
         title={open ? 'Minimise assistant' : 'Open Agenda Assistant'}
@@ -109,10 +139,9 @@ export default function AgendaAssistant({ data }) {
         {open ? <IconChevronDown size={24} /> : <IconChat size={24} />}
       </button>
 
-      {/* Chat panel (always mounted so it can animate open/closed) */}
       <div
-        className="assistant-panel fixed bottom-[84px] right-5 z-50 flex w-[380px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
-        style={{ height: 560, maxHeight: 'calc(100vh - 120px)' }}
+        className="assistant-panel fixed bottom-[84px] right-5 z-50 flex w-[400px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+        style={{ height: 580, maxHeight: 'calc(100vh - 120px)' }}
         data-open={open ? 'true' : 'false'}
         aria-hidden={!open}
         onDragEnter={onDragEnter}
@@ -120,11 +149,10 @@ export default function AgendaAssistant({ data }) {
         onDragLeave={onDragLeave}
         onDrop={onDrop}
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div>
             <div className="text-sm font-semibold text-slate-900">Agenda Assistant</div>
-            <div className="text-[11px] text-slate-400">Local · reads your current agenda</div>
+            <div className="text-[11px] text-slate-400">Local · reads your agenda · proposes PDF updates</div>
           </div>
           <div className="flex items-center gap-1">
             <button className="btn-ghost h-7 px-2 text-xs" onClick={clearChat} title="Clear chat">
@@ -137,11 +165,22 @@ export default function AgendaAssistant({ data }) {
           </div>
         </div>
 
-        {/* Messages */}
         <div className="relative flex-1 space-y-2.5 overflow-y-auto bg-slate-50/60 px-3 py-3">
-          {messages.map((m) => (
-            <Bubble key={m.id} m={m} />
-          ))}
+          {messages.map((m) =>
+            m.kind === 'proposal' ? (
+              <ProposalCard
+                key={m.id}
+                proposal={m.proposal}
+                matters={matters}
+                resolved={m.resolved}
+                summary={m.summary}
+                onApply={(matterId) => applyProposal(m.id, matterId, m.proposal)}
+                onCancel={() => cancelProposal(m.id)}
+              />
+            ) : (
+              <Bubble key={m.id} m={m} />
+            ),
+          )}
           {loading && <TypingBubble />}
           <div ref={endRef} />
 
@@ -153,7 +192,6 @@ export default function AgendaAssistant({ data }) {
           )}
         </div>
 
-        {/* Prompt box */}
         <div className="border-t border-slate-200 p-3">
           {pdf && (
             <div className="mb-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
@@ -202,7 +240,7 @@ export default function AgendaAssistant({ data }) {
           </div>
 
           <div className="mt-1.5 px-1 text-[10px] text-slate-400">
-            Enter to send · Shift+Enter for a new line · PDFs aren’t parsed yet
+            Enter to send · Shift+Enter for a new line · PDFs are read locally, nothing is uploaded
           </div>
         </div>
       </div>
@@ -210,7 +248,6 @@ export default function AgendaAssistant({ data }) {
   )
 }
 
-// A single chat message bubble (assistant left, user right). Preserves newlines.
 function Bubble({ m }) {
   const isUser = m.role === 'user'
   return (
@@ -218,18 +255,11 @@ function Bubble({ m }) {
       <div
         className={
           'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[13px] leading-relaxed ' +
-          (isUser
-            ? 'rounded-br-sm bg-[var(--accent)] text-white'
-            : 'rounded-bl-sm border border-slate-200 bg-white text-slate-700')
+          (isUser ? 'rounded-br-sm bg-[var(--accent)] text-white' : 'rounded-bl-sm border border-slate-200 bg-white text-slate-700')
         }
       >
         {m.pdfName && (
-          <div
-            className={
-              'mb-1.5 flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] ' +
-              (isUser ? 'bg-white/20' : 'bg-slate-100')
-            }
-          >
+          <div className={'mb-1.5 flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] ' + (isUser ? 'bg-white/20' : 'bg-slate-100')}>
             <IconPaperclip size={12} />
             <span className="truncate">{m.pdfName}</span>
           </div>
@@ -240,7 +270,6 @@ function Bubble({ m }) {
   )
 }
 
-// Animated "typing…" indicator shown while a fake response is pending.
 function TypingBubble() {
   return (
     <div className="flex justify-start">
@@ -248,6 +277,99 @@ function TypingBubble() {
         <span className="typing-dot h-1.5 w-1.5 rounded-full bg-slate-400" />
         <span className="typing-dot h-1.5 w-1.5 rounded-full bg-slate-400" />
         <span className="typing-dot h-1.5 w-1.5 rounded-full bg-slate-400" />
+      </div>
+    </div>
+  )
+}
+
+// Confirmation card shown before any agenda change. Nothing is applied until
+// the user picks a matter (if unsure) and clicks Apply.
+const CONF_COLOR = { high: '#16a34a', medium: '#d97706', low: '#dc2626', none: '#dc2626' }
+
+function ProposalCard({ proposal, matters, resolved, summary, onApply, onCancel }) {
+  const [selectedId, setSelectedId] = useState(proposal.matchId || '')
+
+  if (resolved) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-500">
+        {summary || (resolved === 'applied' ? 'Applied.' : 'Proposal discarded.')}
+      </div>
+    )
+  }
+
+  const conf = proposal.confidence
+  const confColor = CONF_COLOR[conf] || '#64748b'
+  const unsure = conf === 'low' || conf === 'none'
+  const canApply = Boolean(selectedId) && proposal.hasUpdates
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 text-[13px] shadow-sm">
+      <div className="mb-2 flex items-center gap-1.5 text-slate-900">
+        <span className="font-semibold">Proposed update from PDF</span>
+      </div>
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] text-slate-500">
+        <IconPaperclip size={12} />
+        <span className="truncate">{proposal.fileName}</span>
+      </div>
+
+      {/* Matter + confidence */}
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="text-slate-500">Detected matter</span>
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize"
+          style={{ color: confColor, backgroundColor: confColor + '1f' }}>
+          {conf} confidence
+        </span>
+      </div>
+      <select
+        value={selectedId}
+        onChange={(e) => setSelectedId(e.target.value)}
+        className="control mb-2 h-9 w-full text-[13px]"
+      >
+        <option value="">{unsure ? 'Choose the matter…' : 'Select a matter…'}</option>
+        {matters.map((m) => (
+          <option key={m.id} value={m.id}>
+            {(m.matterName || m.matterNumber || 'Untitled') + (m.matterNumber && m.matterName ? ` · ${m.matterNumber}` : '')}
+          </option>
+        ))}
+      </select>
+      {proposal.matchName && (
+        <div className="mb-2 text-[11px] text-slate-400">
+          Best guess: {proposal.matchName}{proposal.reasons.length ? ` (${proposal.reasons.join(', ')})` : ''}
+        </div>
+      )}
+
+      {/* Extracted dates */}
+      {proposal.dates.length > 0 && (
+        <div className="mb-2">
+          <div className="mb-1 text-[11px] font-medium text-slate-500">Extracted dates</div>
+          <ul className="space-y-0.5">
+            {proposal.dates.map((d, i) => (
+              <li key={i} className="text-[12px] text-slate-600">
+                <span className="text-slate-400">{d.kind === 'court' ? 'Court' : d.kind === 'deadline' ? 'Deadline' : 'Date'}:</span>{' '}
+                {d.raw}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Proposed updates */}
+      <div className="mb-3 rounded-lg bg-slate-50 p-2">
+        <div className="mb-1 text-[11px] font-medium text-slate-500">Proposed updates</div>
+        {proposal.courtDate && (
+          <div className="text-[12px] text-slate-700">• Next Court Date → <span className="font-medium">{proposal.courtDate}</span></div>
+        )}
+        {proposal.steps.map((s, i) => (
+          <div key={i} className="text-[12px] text-slate-700">• Add next step: {s.text}</div>
+        ))}
+        {!proposal.hasUpdates && <div className="text-[12px] italic text-slate-400">No concrete updates detected.</div>}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button className="btn btn-primary h-8" disabled={!canApply} onClick={() => onApply(selectedId)}>
+          Apply
+        </button>
+        <button className="btn h-8" onClick={onCancel}>Cancel</button>
       </div>
     </div>
   )

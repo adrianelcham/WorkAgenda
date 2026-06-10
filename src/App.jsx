@@ -202,8 +202,12 @@ export default function App() {
         </div>
       </div>
 
-      {/* Floating local chat assistant (reads the current agenda; never edits it) */}
-      <AgendaAssistant data={data} />
+      {/* Floating local chat assistant. Reads the agenda for Q&A; only edits it
+          when the user confirms a PDF-extraction proposal (Apply). */}
+      <AgendaAssistant
+        data={data}
+        onApplyExtraction={(matterId, proposal) => setData((d) => agenda.applyExtraction(d, matterId, proposal))}
+      />
     </div>
   )
 }

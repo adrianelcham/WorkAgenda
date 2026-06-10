@@ -103,6 +103,40 @@ export const addSection = (data) =>
 export const renameSection = (data, id, title) =>
   ({ ...data, sections: data.sections.map((s) => (s.id === id ? { ...s, title } : s)) })
 
+// ---- PDF extraction proposal (Stage 6) -----------------------------------
+// Apply a confirmed proposal to one matter: set the next court date (appending
+// if one already exists), add deadline next steps, and stamp the source file.
+export const applyExtraction = (data, matterId, proposal) =>
+  mapMatter(data, matterId, (m) => {
+    let nextCourtDate = m.nextCourtDate
+    if (proposal.courtDate) {
+      const existing = (m.nextCourtDate || '').trim()
+      nextCourtDate = !existing
+        ? proposal.courtDate
+        : existing.includes(proposal.courtDate)
+          ? existing
+          : existing + '\n' + proposal.courtDate
+    }
+
+    const newSteps = (proposal.steps || []).map((s) => ({
+      ...newTask(s.text),
+      dueDate: s.dueDate || null,
+      sourceDocument: proposal.fileName || null,
+    }))
+
+    const sourceDocuments = proposal.fileName && !(m.sourceDocuments || []).includes(proposal.fileName)
+      ? [...(m.sourceDocuments || []), proposal.fileName]
+      : (m.sourceDocuments || [])
+
+    return {
+      ...m,
+      nextCourtDate,
+      nextSteps: [...m.nextSteps, ...newSteps],
+      sourceDocuments,
+      lastUpdatedAt: now(),
+    }
+  })
+
 export const sectionIsEmpty = (data, id) => !data.matters.some((m) => m.sectionId === id)
 
 export const removeSection = (data, id) =>
