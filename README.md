@@ -26,19 +26,29 @@ updates you confirm with **Apply / Cancel** (nothing is applied silently).
 
 ### Set your API key
 
-The key is read **only on the server** (the `api/chat` route and the Vite dev
-middleware) and is never bundled into the browser.
+The key is read **only on the server** (the API routes + the Vite dev
+middleware) and is never bundled into the browser. The same endpoints
+(`/api/chat`, `/api/extract-agenda`) are implemented for several hosts:
+
+- **Local dev** — a Vite middleware (`vite.config.js`) reads `.env`.
+- **Cloudflare Pages** — `functions/api/*.js` (read `env.ANTHROPIC_API_KEY`).
+- **Vercel** — `api/*.js` (read `process.env.ANTHROPIC_API_KEY`).
+
+All three reuse one runtime-agnostic helper, `api/_anthropic.js`.
 
 1. Copy `.env.example` to `.env`.
 2. Set `ANTHROPIC_API_KEY=...` (optionally `ANTHROPIC_MODEL`, defaults to `claude-sonnet-4-6`).
-3. `npm run dev` — chat now uses Anthropic. On Vercel, set `ANTHROPIC_API_KEY`
-   in the project's Environment Variables (the `api/chat.js` function picks it up).
+3. `npm run dev` — chat now uses Anthropic.
 
 If the key or route is unavailable, Rachel automatically **falls back to local
 answers** (urgent / waiting / court-date / summarise) so the app keeps working.
 
-> **Note on Netlify:** the route is a Vercel-style function in `api/`. On
-> Netlify you'd add an equivalent function and redirect `/api/chat` to it.
+### Deploy on Cloudflare Pages
+
+1. Connect the GitHub repo in the Cloudflare dashboard (Workers & Pages → Create → Pages → Connect to Git).
+2. Settings: **Framework preset** `Vite` · **Build command** `npm run build` · **Build output directory** `dist` · **Root directory** `/`.
+3. Add the secret **`ANTHROPIC_API_KEY`** under Settings → Variables and Secrets (Production).
+4. Deploy. The `functions/api/*` routes are picked up automatically — no extra config.
 
 ### Privacy
 
